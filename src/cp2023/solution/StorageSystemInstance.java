@@ -147,7 +147,7 @@ public class StorageSystemInstance implements StorageSystem {
         // no need to close mutex since there can be only one process
         // operating on a component (which is checked earlier)
         if (componentPlacement.containsKey(compId))
-            throw new ComponentAlreadyExists(compId);
+            throw new ComponentAlreadyExists(compId, componentPlacement.get(compId));
     }
     private void prepareMutexes(ComponentId compId){
         mutexComponentOperation.putIfAbsent(compId, new Semaphore(1, true));
@@ -185,14 +185,16 @@ public class StorageSystemInstance implements StorageSystem {
                         transferIDependOn.put(transfer, t);
                         transferTakingMyPlace.put(t, transfer);
                         transferSleep.get(t).release();
+                        awaitingTransfers.get(device).remove(t);
                         return t;
                     }
                     ComponentTransfer ans = dfs(t.getSourceDeviceId(), transfer);
                     if (ans != null) {
-                        awaitingTransfers.get(source).remove(ans);
+                        //awaitingTransfers.get(source).remove(ans);
+                        awaitingTransfers.get(device).remove(t);
                         transferIDependOn.put(ans, t);
                         transferTakingMyPlace.put(t, ans);
-                        transferSleep.get(ans).release();
+                        transferSleep.get(t).release();
                         return t;
                     }
                 }
@@ -213,7 +215,7 @@ public class StorageSystemInstance implements StorageSystem {
             }
             // will not be done simultaneously by many processes thanks to the mutex
             else if (deviceFreeSlots.get(destination).get() > 0) {
-                System.err.println("We have free slots for component " + transfer.getComponentId());
+                //System.err.println("We have free slots for component " + transfer.getComponentId());
                 deviceFreeSlots.get(destination).decrementAndGet();
             }
             // state of preparingFreeTransfers will not change thanks to mutex
@@ -234,29 +236,16 @@ public class StorageSystemInstance implements StorageSystem {
                 else {
                     transferIDependOn.put(dfsResult, transfer);
                     transferTakingMyPlace.put(transfer, dfsResult);
+                    //transferIDependOn.forEach((t1, t2) -> System.err.println(t1.getComponentId() + "<-" + t2.getComponentId()));
+                    //transferTakingMyPlace.forEach((t1, t2) -> System.err.println(t1.getComponentId() + "->" + t2.getComponentId()));
+                    //System.out.println("Transfer of " + transfer.getComponentId() + " has finished finding cycle");
                     transferSleep.get(transfer).release();
                 }
                 mutex.release();
                 return;
             }
 
-            if (source != null) {
-                /*if (awaitingTransfers.get(source).isEmpty()) {
-                    preparingFreeTransfers.get(source).add(transfer);
-                } else {
-                    ComponentTransfer waiting = awaitingTransfers.get(source).get(0);
-                    // FIXME: NIE DZIAŁA PIĘTROWO
-                    System.err.println("Waking up the transfer of " + waiting.getComponentId());
-                    awaitingTransfers.get(source).remove(0);
-                    transferIDependOn.put(waiting, transfer);
-                    transferTakingMyPlace.put(transfer, waiting);
-                    DeviceId waitingSource = waiting.getSourceDeviceId();
-                    if (waitingSource != null)
-                        preparingFreeTransfers.get(waitingSource).add(waiting);
-                    transferSleep.get(waiting).release();
-                }*/
-                temporaryName(transfer);
-            }
+            temporaryName(transfer);
             transferSleep.get(transfer).release();
 
             mutex.release();
@@ -281,11 +270,13 @@ public class StorageSystemInstance implements StorageSystem {
 
         private void preparationFinished(ComponentTransfer transfer) {
             // mutex is used to manipulate deviceFreeSlots and preparingFreeTransfers TODO: and?
+            // TODO: deviceFreeSlots chyba nie trzeba chronić
             try {
                 mutex.acquire();
             } catch (InterruptedException e) {
                 panic(e);
             }
+            //System.err.println("Transfer of " + transfer.getComponentId() + " has finished preparation");
             DeviceId source = transfer.getSourceDeviceId();
             DeviceId destination = transfer.getDestinationDeviceId();
             ComponentId component = transfer.getComponentId();
@@ -293,6 +284,7 @@ public class StorageSystemInstance implements StorageSystem {
                 if (preparingFreeTransfers.get(source).contains(transfer)) {
                     // free slot on the source device
                     deviceFreeSlots.get(source).incrementAndGet();
+                    preparingFreeTransfers.get(source).remove(transfer);
                 }
                 else {
                     // a transfer wants to take my place
@@ -303,8 +295,8 @@ public class StorageSystemInstance implements StorageSystem {
             }
             if (!transferIDependOn.containsKey(transfer)) {
                 // transfer can be performed
-                if (destination != null)
-                    deviceFreeSlots.get(destination).decrementAndGet();
+                //if (destination != null)
+                 //   deviceFreeSlots.get(destination).decrementAndGet();
                 transferSleep.get(transfer).release();
             }
             else {
@@ -312,12 +304,18 @@ public class StorageSystemInstance implements StorageSystem {
                 // no slot was publicly freed, so no operating on deviceFreeSlots
                 transferIDependOn.remove(transfer);
             }
+            mutex.release();
 
             if (destination == null)
                 componentPlacement.remove(component);
             else
                 componentPlacement.put(component, destination);
-            mutex.release();
         }
+    }
+
+    public void temporaryPrint() {
+        componentPlacement.forEach((comp, where) -> System.out.println(comp + "->" + where));
+        //organiser.awaitingTransfers.forEach((dev, list) -> System.out.println(dev + "<-" + list.size()));
+        deviceFreeSlots.forEach((dev, amount) -> System.out.println(dev + ": " + amount));
     }
 }
