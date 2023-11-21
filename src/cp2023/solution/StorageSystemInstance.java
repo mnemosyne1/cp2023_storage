@@ -3,14 +3,9 @@ package cp2023.solution;
 import cp2023.base.*;
 import cp2023.exceptions.*;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -24,7 +19,7 @@ public class StorageSystemInstance implements StorageSystem {
     private final Map<DeviceId, List<ComponentTransfer>> awaitingTransfers;
     private final Map<DeviceId, List<ComponentTransfer>> preparingFreeTransfers;
     private final ConcurrentMap<ComponentTransfer, ComponentTransfer> transferIDependOn;
-    private final Map<ComponentTransfer, ComponentTransfer> transferTakingMyPlace;
+    private final ConcurrentMap<ComponentTransfer, ComponentTransfer> transferTakingMyPlace;
 
     public StorageSystemInstance(Map<DeviceId, Integer> deviceTotalSlots,
                                  Map<ComponentId, DeviceId> componentPlacement) {
@@ -47,18 +42,18 @@ public class StorageSystemInstance implements StorageSystem {
                 throw new IllegalArgumentException("Device with ID " + devId +
                         " (component: " + compId + ") does not exist");
             if (this.deviceFreeSlots.get(devId).decrementAndGet() < 0)
-                throw new IllegalArgumentException("Too many components were " +
-                        "assigned to device " + devId);
+                throw new IllegalArgumentException("Too many components " +
+                        "were assigned to device " + devId);
             this.componentPlacement.put(compId, devId);
         });
         awaitingTransfers = new HashMap<>();
         preparingFreeTransfers = new HashMap<>();
         transferIDependOn = new ConcurrentHashMap<>();
-        transferTakingMyPlace = new HashMap<>();
-        deviceFreeSlots.forEach((devId, capacity) ->
-                awaitingTransfers.put(devId, new LinkedList<>()));
-        deviceFreeSlots.forEach((devId, capacity) ->
-                preparingFreeTransfers.put(devId, new LinkedList<>()));
+        transferTakingMyPlace = new ConcurrentHashMap<>();
+        deviceFreeSlots.forEach((devId, capacity) -> {
+            awaitingTransfers.put(devId, new LinkedList<>());
+            preparingFreeTransfers.put(devId, new LinkedList<>());
+        });
         mutexGraph = new Semaphore(1, true);
     }
 
@@ -83,7 +78,8 @@ public class StorageSystemInstance implements StorageSystem {
         endTransfer(transfer);
     }
 
-    private void checkTransferCorrectness(ComponentTransfer transfer) throws TransferException {
+    private void checkTransferCorrectness(ComponentTransfer transfer)
+            throws TransferException {
         ComponentId component = transfer.getComponentId();
         mutexComponentOperation.putIfAbsent(component, new Semaphore(1, true));
         // mutex is protecting the set componentsOperatedOn from simultaneous
@@ -110,8 +106,9 @@ public class StorageSystemInstance implements StorageSystem {
             throw new DeviceDoesNotExist(source);
         if (destination != null && deviceDoesNotExist(destination))
             throw new DeviceDoesNotExist(destination);
-        if (source == null)
+        if (source == null) {
             assertComponentIsNew(component);
+        }
         else {
             assertComponentExists(component, source);
             if (source.equals(destination))
@@ -130,10 +127,12 @@ public class StorageSystemInstance implements StorageSystem {
             throw new ComponentDoesNotExist(component, device);
     }
 
-    private void assertComponentIsNew(ComponentId component) throws ComponentAlreadyExists {
+    private void assertComponentIsNew(ComponentId component)
+            throws ComponentAlreadyExists {
         // there is only one process operating on a component (checked earlier)
         if (componentPlacement.containsKey(component))
-            throw new ComponentAlreadyExists(component, componentPlacement.get(component));
+            throw new ComponentAlreadyExists(component,
+                    componentPlacement.get(component));
     }
 
     private void endTransfer(ComponentTransfer transfer) {
@@ -249,7 +248,8 @@ public class StorageSystemInstance implements StorageSystem {
             componentPlacement.put(component, destination);
     }
 
-    private ComponentTransfer dfs(DeviceId device, ComponentTransfer transfer, Set<DeviceId> visited) {
+    private ComponentTransfer dfs(DeviceId device, ComponentTransfer transfer,
+                                  Set<DeviceId> visited) {
         if (device == null || visited.contains(device))
             return null;
         visited.add(device);

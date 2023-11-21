@@ -19,7 +19,6 @@ public final class StorageSystemFactory {
     public static StorageSystem newSystem(
             Map<DeviceId, Integer> deviceTotalSlots,
             Map<ComponentId, DeviceId> componentPlacement) {
-        // FIXED: implement
         return new StorageSystemInstance(deviceTotalSlots, componentPlacement);
     }
 
