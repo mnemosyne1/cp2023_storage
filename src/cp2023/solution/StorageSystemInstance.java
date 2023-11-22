@@ -27,9 +27,14 @@ public class StorageSystemInstance implements StorageSystem {
             throw new IllegalArgumentException("No devices were given");
         this.deviceFreeSlots = new ConcurrentHashMap<>();
         deviceTotalSlots.forEach((devId, capacity) -> {
-            if (capacity == 0)
+            if (devId == null)
+                throw new IllegalArgumentException("Device with null ID declared");
+            if (capacity == null) // capacity is Integer, so it can be null
                 throw new IllegalArgumentException("Device with ID "
-                        + devId + " declared to have capacity = 0");
+                        + devId + "declared to have null capacity");
+            if (capacity <= 0)
+                throw new IllegalArgumentException("Device with ID " + devId
+                        + " declared to have capacity " + capacity + " <= 0");
             else
                 deviceFreeSlots.put(devId, new AtomicInteger(capacity));
         });
@@ -38,9 +43,12 @@ public class StorageSystemInstance implements StorageSystem {
         this.componentsOperatedOn = new ConcurrentHashMap<>();
         this.transferSleep = new ConcurrentHashMap<>();
         componentPlacement.forEach((compId, devId) -> {
+            if (compId == null)
+                throw new IllegalArgumentException("Component with null ID declared");
             if (deviceDoesNotExist(devId))
-                throw new IllegalArgumentException("Device with ID " + devId +
-                        " (component: " + compId + ") does not exist");
+                throw new IllegalArgumentException("Device with ID " +
+                        (devId == null ? "null" : devId) +
+                        " (for component " + compId + ") does not exist");
             if (this.deviceFreeSlots.get(devId).decrementAndGet() < 0)
                 throw new IllegalArgumentException("Too many components " +
                         "were assigned to device " + devId);
